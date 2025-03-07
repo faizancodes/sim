@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { format } from 'date-fns'
-import { AlertCircle, Clock, Info, Loader2 } from 'lucide-react'
+import { AlertCircle, Info, Loader2 } from 'lucide-react'
 import { ControlBar } from './components/control-bar/control-bar'
 import { Filters } from './components/filters/filters'
 import { useFilterStore } from './stores/store'
