@@ -1,5 +1,6 @@
 'use client'
 
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import html2canvas from 'html2canvas'
 import { v4 as uuidv4 } from 'uuid'
 import { storageMode } from './storage'
@@ -14,7 +15,6 @@ interface PreviewOptions {
   quality?: number
   format?: 'png' | 'jpeg' | 'webp'
   s3Bucket?: string
-  s3Path?: string
   selector?: string
   padding?: number
   scale?: number
@@ -39,8 +39,7 @@ const DEFAULT_OPTIONS: Partial<PreviewOptions> = {
   height: 630,
   quality: 80,
   format: 'webp',
-  s3Bucket: 'sim-studio-previews',
-  s3Path: 'workflow-previews',
+  s3Bucket: process.env.NEXT_PUBLIC_S3_BUCKET,
   selector: '.react-flow',
   padding: 32,
   scale: 1.5,
@@ -55,11 +54,7 @@ const DEFAULT_OPTIONS: Partial<PreviewOptions> = {
  */
 export async function generateWorkflowPreview(options: PreviewOptions): Promise<PreviewResult> {
   const mergedOptions = { ...DEFAULT_OPTIONS, ...options }
-  const { workflowId, quality, format, s3Bucket, s3Path, selector, padding, scale } = mergedOptions
-
-  // Generate a unique ID for this preview
-  const previewId = uuidv4()
-  const timestamp = Date.now()
+  const { workflowId, quality, format, s3Bucket, selector, padding, scale } = mergedOptions
 
   try {
     // Get the ReactFlow container element
@@ -75,30 +70,34 @@ export async function generateWorkflowPreview(options: PreviewOptions): Promise<
       scale
     )
 
-    // Upload to storage
-    const lightModeUrl = await uploadToStorage(
-      lightModeBuffer,
-      `${s3Path}/${workflowId}/${previewId}-light.${format}`,
-      format,
-      quality,
-      s3Bucket
-    )
+    // Convert buffers to blobs
+    const lightModeBlob = new Blob([lightModeBuffer], { type: `image/${format}` })
+    const darkModeBlob = new Blob([darkModeBuffer], { type: `image/${format}` })
 
-    const darkModeUrl = await uploadToStorage(
-      darkModeBuffer,
-      `${s3Path}/${workflowId}/${previewId}-dark.${format}`,
-      format,
-      quality,
-      s3Bucket
-    )
+    // Create files from blobs
+    const lightModeFile = new File([lightModeBlob], `light.${format}`, { type: `image/${format}` })
+    const darkModeFile = new File([darkModeBlob], `dark.${format}`, { type: `image/${format}` })
 
-    return {
-      previewId,
-      lightModeUrl,
-      darkModeUrl,
-      timestamp,
-      workflowId,
+    // Create FormData for the API request
+    const formData = new FormData()
+    formData.append('workflowId', workflowId)
+    formData.append('lightModeImage', lightModeFile)
+    formData.append('darkModeImage', darkModeFile)
+
+    // Send the images to our server-side API
+    const response = await fetch('/api/workflow-preview', {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json()
+      throw new Error(`API error: ${errorData.error || response.statusText}`)
     }
+
+    // Parse the response
+    const result = await response.json()
+    return result as PreviewResult
   } catch (error) {
     console.error('Error generating workflow preview:', error)
     throw new Error(
@@ -344,16 +343,46 @@ async function uploadToStorage(
     console.log(`[Local Storage] Would save ${path} locally`)
     return `file://${path}`
   } else {
-    // For S3 implementation
-    // In a real implementation, this would use AWS SDK to upload to S3
-    // For now, we'll just simulate the upload
+    // For S3 implementation using AWS SDK
+    try {
+      const s3Client = new S3Client({
+        region: process.env.AWS_REGION,
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+        },
+        // Add custom endpoint if specified in environment
+        endpoint: process.env.NEXT_PUBLIC_S3_ENDPOINT || undefined,
+      })
 
-    // This would be replaced with actual S3 upload code
-    console.log(`[S3] Would upload to ${bucket}/${path}`)
+      const contentType =
+        format === 'webp' ? 'image/webp' : format === 'png' ? 'image/png' : 'image/jpeg'
 
-    // Simulate S3 URL
-    const baseUrl = process.env.NEXT_PUBLIC_S3_URL || `https://${bucket}.s3.amazonaws.com`
-    return `${baseUrl}/${path}`
+      // Use server-side upload instead of client-side to avoid CORS issues
+      const command = new PutObjectCommand({
+        Bucket: bucket,
+        Key: path,
+        Body: buffer,
+        ContentType: contentType,
+        CacheControl: 'max-age=31536000', // Cache for 1 year
+        ACL: 'public-read', // Make the object publicly readable
+      })
+
+      await s3Client.send(command)
+
+      // Construct the URL for the uploaded object
+      // Use the correct region format in the URL
+      const region = process.env.AWS_REGION || 'us-east-1'
+      const baseUrl =
+        process.env.NEXT_PUBLIC_S3_URL || `https://${bucket}.s3.${region}.amazonaws.com`
+
+      return `${baseUrl}/${path}`
+    } catch (error) {
+      console.error('Error uploading to S3:', error)
+      throw new Error(
+        `Failed to upload to S3: ${error instanceof Error ? error.message : 'Unknown error'}`
+      )
+    }
   }
 }
 
@@ -363,25 +392,49 @@ async function uploadToStorage(
  * @param previewId - ID of the preview to delete
  * @param workflowId - ID of the workflow
  * @param s3Bucket - S3 bucket name
- * @param s3Path - S3 path prefix
  * @returns Promise resolving when deletion is complete
  */
 export async function deleteWorkflowPreview(
   previewId: string,
   workflowId: string,
-  s3Bucket: string = DEFAULT_OPTIONS.s3Bucket as string,
-  s3Path: string = DEFAULT_OPTIONS.s3Path as string
+  s3Bucket: string = DEFAULT_OPTIONS.s3Bucket as string
 ): Promise<void> {
   try {
     if (storageMode.isLocal) {
       // For local storage implementation
       console.log(`[Local Storage] Would delete preview ${previewId} for workflow ${workflowId}`)
     } else {
-      // For S3 implementation
-      // This would use AWS SDK to delete from S3
-      console.log(
-        `[S3] Would delete preview ${previewId} for workflow ${workflowId} from ${s3Bucket}/${s3Path}`
-      )
+      // For S3 implementation using AWS SDK
+      const s3Client = new S3Client({
+        region: process.env.AWS_REGION || 'us-east-1',
+        credentials: {
+          accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+          secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+        },
+        // Add custom endpoint if specified in environment
+        endpoint: process.env.NEXT_PUBLIC_S3_ENDPOINT || undefined,
+      })
+
+      // Delete both light and dark mode images
+      const lightModeKey = `${workflowId}/${previewId}-light.${DEFAULT_OPTIONS.format}`
+      const darkModeKey = `${workflowId}/${previewId}-dark.${DEFAULT_OPTIONS.format}`
+
+      await Promise.all([
+        s3Client.send(
+          new DeleteObjectCommand({
+            Bucket: s3Bucket,
+            Key: lightModeKey,
+          })
+        ),
+        s3Client.send(
+          new DeleteObjectCommand({
+            Bucket: s3Bucket,
+            Key: darkModeKey,
+          })
+        ),
+      ])
+
+      console.log(`[S3] Deleted preview ${previewId} for workflow ${workflowId} from ${s3Bucket}`)
     }
   } catch (error) {
     console.error('Error deleting workflow preview:', error)
