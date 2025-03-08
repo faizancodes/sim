@@ -5,11 +5,11 @@ import { BlockConfig } from '../types'
 export const GmailBlock: BlockConfig<GmailToolResponse> = {
   type: 'gmail',
   name: 'Gmail',
-  description: 'Send, read, and search Gmail messages',
+  description: 'Send, read, and search emails',
   longDescription:
     'Integrate Gmail functionality to send, read, and search email messages within your workflow. Automate email communications and process email content using OAuth authentication.',
   category: 'tools',
-  bgColor: '#E0E0E0',
+  bgColor: '#3C4043',
   icon: GmailIcon,
   subBlocks: [
     // Operation selector

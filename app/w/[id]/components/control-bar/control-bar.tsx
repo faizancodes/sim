@@ -23,7 +23,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { generateWorkflowPreview } from '@/lib/preview'
 import { cn } from '@/lib/utils'
 import { useNotificationStore } from '@/stores/notifications/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
@@ -62,7 +61,7 @@ export function ControlBar() {
   // Deployment states
   const [isDeploying, setIsDeploying] = useState(false)
 
-  // Publish state
+  // Publish state - keeping this for UI state management
   const [isPublishing, setIsPublishing] = useState(false)
 
   // Get notifications for current workflow
@@ -265,25 +264,8 @@ export function ControlBar() {
   const handlePublishWorkflow = async () => {
     if (!activeWorkflowId) return
 
-    try {
-      setIsPublishing(true)
-
-      // Generate preview images
-      const previewResult = await generateWorkflowPreview({
-        workflowId: activeWorkflowId,
-        selector: '.react-flow',
-        padding: 40,
-        scale: 2,
-      })
-
-      // Here you would typically save the preview URLs to your database
-      // along with other workflow metadata for the marketplace
-      console.log('Preview generated:', previewResult)
-    } catch (error) {
-      console.error('Error publishing workflow:', error)
-    } finally {
-      setIsPublishing(false)
-    }
+    // Empty function for future marketplace implementation
+    console.log('Publish to marketplace clicked for workflow:', activeWorkflowId)
   }
 
   /**
