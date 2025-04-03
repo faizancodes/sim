@@ -137,11 +137,4 @@ export abstract class Block {
       metadata: this.metadata,
     }
   }
-}
-
-/**
- * Generate a unique ID for blocks
- */
-function generateId(): string {
-  return Math.random().toString(36).substring(2, 9)
 } 
